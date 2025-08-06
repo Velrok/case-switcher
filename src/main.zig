@@ -6,20 +6,65 @@ const CaseMode = enum {
     ConstCase,
 };
 
+const ExcludedCases = struct {
+    title_case: bool = false,
+    camel_case: bool = false,
+    snake_case: bool = false,
+    kebab_case: bool = false,
+    const_case: bool = false,
+
+    fn isExcluded(self: ExcludedCases, case: CaseMode) bool {
+        return switch (case) {
+            .TitleCase => self.title_case,
+            .CamelCase => self.camel_case,
+            .SnakeCase => self.snake_case,
+            .KebabCase => self.kebab_case,
+            .ConstCase => self.const_case,
+        };
+    }
+};
+
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const stdin_reader = std.io.getStdIn().reader();
-    var buffer: [1024]u8 = undefined;
-    const line = try stdin_reader.readUntilDelimiter(&buffer, '\n');
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
 
-    const result = try switcher(allocator, line);
+    var excluded = ExcludedCases{};
+    var input_text: ?[]const u8 = null;
+
+    // Parse command line arguments
+    for (args[1..]) |arg| {
+        if (std.mem.eql(u8, arg, "--no-title-case")) {
+            excluded.title_case = true;
+        } else if (std.mem.eql(u8, arg, "--no-camel-case")) {
+            excluded.camel_case = true;
+        } else if (std.mem.eql(u8, arg, "--no-snake-case")) {
+            excluded.snake_case = true;
+        } else if (std.mem.eql(u8, arg, "--no-kebab-case")) {
+            excluded.kebab_case = true;
+        } else if (std.mem.eql(u8, arg, "--no-const-case")) {
+            excluded.const_case = true;
+        } else {
+            input_text = arg;
+        }
+    }
+
+    const line = if (input_text) |text| blk: {
+        break :blk text;
+    } else blk: {
+        const stdin_reader = std.io.getStdIn().reader();
+        var buffer: [1024]u8 = undefined;
+        break :blk try stdin_reader.readUntilDelimiter(&buffer, '\n');
+    };
+
+    const result = try switcher(allocator, line, excluded);
     print("{s}\n", .{result});
 }
 
-fn switcher(allocator: std.mem.Allocator, line: []const u8) ![]u8 {
+fn switcher(allocator: std.mem.Allocator, line: []const u8, excluded: ExcludedCases) ![]u8 {
     const mode = identifyCase(line);
     var words = try splitLine(allocator, mode, line);
     defer words.deinit();
@@ -36,7 +81,7 @@ fn switcher(allocator: std.mem.Allocator, line: []const u8) ![]u8 {
         try lowercaseWords.append(try std.ascii.allocLowerString(allocator, word));
     }
 
-    const targetMode = nextMode(mode);
+    const targetMode = nextMode(mode, excluded);
     return try convertToCase(allocator, lowercaseWords.items, targetMode);
 }
 
@@ -145,14 +190,30 @@ test "splitLine function" {
     try std.testing.expectEqualStrings("hello", single_camel.items[0]);
 }
 
-fn nextMode(mode: CaseMode) CaseMode {
-    return switch (mode) {
-        .TitleCase => .CamelCase,
-        .CamelCase => .SnakeCase,
-        .SnakeCase => .KebabCase,
-        .KebabCase => .ConstCase,
-        .ConstCase => .TitleCase,
-    };
+fn nextMode(mode: CaseMode, excluded: ExcludedCases) CaseMode {
+    const sequence = [_]CaseMode{ .TitleCase, .CamelCase, .SnakeCase, .KebabCase, .ConstCase };
+    
+    // Find current mode index
+    var current_index: usize = 0;
+    for (sequence, 0..) |seq_mode, i| {
+        if (seq_mode == mode) {
+            current_index = i;
+            break;
+        }
+    }
+    
+    // Find next non-excluded mode
+    var next_index = (current_index + 1) % sequence.len;
+    while (excluded.isExcluded(sequence[next_index]) and next_index != current_index) {
+        next_index = (next_index + 1) % sequence.len;
+    }
+    
+    // If all modes are excluded except current, return current
+    if (next_index == current_index and excluded.isExcluded(sequence[next_index])) {
+        return mode;
+    }
+    
+    return sequence[next_index];
 }
 
 fn convertToCase(allocator: std.mem.Allocator, words: [][]u8, targetMode: CaseMode) ![]u8 {
@@ -272,55 +333,132 @@ test "identifyCase recognises single titlecase word as TitleCase" {
 
 test "switcher function converts between case formats" {
     const allocator = std.testing.allocator;
+    const no_exclusions = ExcludedCases{};
 
     // TitleCase -> CamelCase
     {
-        const result = try switcher(allocator, "HelloWorld");
+        const result = try switcher(allocator, "HelloWorld", no_exclusions);
         defer allocator.free(result);
         try std.testing.expectEqualStrings("helloWorld", result);
     }
 
     // CamelCase -> SnakeCase
     {
-        const result = try switcher(allocator, "helloWorld");
+        const result = try switcher(allocator, "helloWorld", no_exclusions);
         defer allocator.free(result);
         try std.testing.expectEqualStrings("hello_world", result);
     }
 
     // SnakeCase -> KebabCase
     {
-        const result = try switcher(allocator, "hello_world");
+        const result = try switcher(allocator, "hello_world", no_exclusions);
         defer allocator.free(result);
         try std.testing.expectEqualStrings("hello-world", result);
     }
 
     // KebabCase -> ConstCase
     {
-        const result = try switcher(allocator, "hello-world");
+        const result = try switcher(allocator, "hello-world", no_exclusions);
         defer allocator.free(result);
         try std.testing.expectEqualStrings("HELLO_WORLD", result);
     }
 
     // ConstCase -> TitleCase
     {
-        const result = try switcher(allocator, "HELLO_WORLD");
+        const result = try switcher(allocator, "HELLO_WORLD", no_exclusions);
         defer allocator.free(result);
         try std.testing.expectEqualStrings("HelloWorld", result);
     }
 
     // Single words
     {
-        const result = try switcher(allocator, "hello");
+        const result = try switcher(allocator, "hello", no_exclusions);
         defer allocator.free(result);
         try std.testing.expectEqualStrings("hello", result); // camelCase -> snake_case, but single word
     }
 
     // Empty string
     {
-        const result = try switcher(allocator, "");
+        const result = try switcher(allocator, "", no_exclusions);
         defer allocator.free(result);
         try std.testing.expectEqualStrings("", result);
     }
+}
+
+test "nextMode with exclusions" {
+    const no_exclusions = ExcludedCases{};
+    
+    // Test normal sequence without exclusions
+    try testing.expectEqual(CaseMode.CamelCase, nextMode(.TitleCase, no_exclusions));
+    try testing.expectEqual(CaseMode.SnakeCase, nextMode(.CamelCase, no_exclusions));
+    try testing.expectEqual(CaseMode.KebabCase, nextMode(.SnakeCase, no_exclusions));
+    try testing.expectEqual(CaseMode.ConstCase, nextMode(.KebabCase, no_exclusions));
+    try testing.expectEqual(CaseMode.TitleCase, nextMode(.ConstCase, no_exclusions));
+    
+    // Test with camel case excluded - should skip camelCase
+    const no_camel = ExcludedCases{ .camel_case = true };
+    try testing.expectEqual(CaseMode.SnakeCase, nextMode(.TitleCase, no_camel));
+    try testing.expectEqual(CaseMode.KebabCase, nextMode(.SnakeCase, no_camel));
+    
+    // Test with multiple exclusions
+    const no_camel_kebab = ExcludedCases{ .camel_case = true, .kebab_case = true };
+    try testing.expectEqual(CaseMode.SnakeCase, nextMode(.TitleCase, no_camel_kebab));
+    try testing.expectEqual(CaseMode.ConstCase, nextMode(.SnakeCase, no_camel_kebab));
+    
+    // Test when current mode is excluded - should stay same
+    const all_excluded = ExcludedCases{ .title_case = true, .camel_case = true, .snake_case = true, .kebab_case = true, .const_case = true };
+    try testing.expectEqual(CaseMode.TitleCase, nextMode(.TitleCase, all_excluded));
+}
+
+test "switcher with exclusions" {
+    const allocator = std.testing.allocator;
+    
+    // Test excluding camelCase: TitleCase -> SnakeCase instead of CamelCase
+    {
+        const no_camel = ExcludedCases{ .camel_case = true };
+        const result = try switcher(allocator, "HelloWorld", no_camel);
+        defer allocator.free(result);
+        try std.testing.expectEqualStrings("hello_world", result);
+    }
+    
+    // Test excluding snake and kebab: CamelCase -> ConstCase (skips snake and kebab)
+    {
+        const no_snake_kebab = ExcludedCases{ .snake_case = true, .kebab_case = true };
+        const result = try switcher(allocator, "helloWorld", no_snake_kebab);
+        defer allocator.free(result);
+        try std.testing.expectEqualStrings("HELLO_WORLD", result);
+    }
+    
+    // Test excluding everything but title and camel: should alternate between them
+    {
+        const only_title_camel = ExcludedCases{ .snake_case = true, .kebab_case = true, .const_case = true };
+        
+        // TitleCase -> CamelCase
+        const result1 = try switcher(allocator, "HelloWorld", only_title_camel);
+        defer allocator.free(result1);
+        try std.testing.expectEqualStrings("helloWorld", result1);
+        
+        // CamelCase -> TitleCase (wraps around, skipping excluded ones)
+        const result2 = try switcher(allocator, "helloWorld", only_title_camel);
+        defer allocator.free(result2);
+        try std.testing.expectEqualStrings("HelloWorld", result2);
+    }
+}
+
+test "ExcludedCases isExcluded function" {
+    const excluded = ExcludedCases{
+        .title_case = true,
+        .camel_case = false,
+        .snake_case = true,
+        .kebab_case = false,
+        .const_case = true,
+    };
+    
+    try testing.expect(excluded.isExcluded(.TitleCase));
+    try testing.expect(!excluded.isExcluded(.CamelCase));
+    try testing.expect(excluded.isExcluded(.SnakeCase));
+    try testing.expect(!excluded.isExcluded(.KebabCase));
+    try testing.expect(excluded.isExcluded(.ConstCase));
 }
 
 const std = @import("std");

@@ -14,6 +14,18 @@ Case Switcher is a Zig-based command-line utility that converts text between dif
 
 The project uses a dual-module architecture with both a library (`root.zig`) and executable (`main.zig`) component.
 
+## CLI Arguments
+
+The tool supports excluding specific case formats from the rotation using `--no-*` flags:
+
+- `--no-title-case`: Excludes TitleCase from rotation
+- `--no-camel-case`: Excludes camelCase from rotation  
+- `--no-snake-case`: Excludes snake_case from rotation
+- `--no-kebab-case`: Excludes kebab-case from rotation
+- `--no-const-case`: Excludes CONST_CASE from rotation
+
+Multiple exclusions can be combined. Input can be provided as a command line argument or via stdin.
+
 ## Build Commands
 
 All build operations use Zig's built-in build system:
@@ -27,6 +39,10 @@ zig build run
 
 # Run with arguments
 zig build run -- "some_input_text"
+
+# Run with case exclusions
+zig build run -- --no-camel-case "HelloWorld"
+zig build run -- --no-snake-case --no-kebab-case "helloWorld"
 
 # Run all unit tests
 zig build test
@@ -46,19 +62,19 @@ zig build --release=small   # Optimize for size
 
 ## Key Architecture Components
 
-### Case Detection (`identifyCase` function in main.zig:116)
+### Case Detection (`identifyCase` function in main.zig:216)
 Analyzes input text to determine the current case format by checking for:
 - Underscore delimiters (snake_case vs CONST_CASE based on first character case)
 - Hyphen delimiters (kebab-case)
 - Case of first character (camelCase vs TitleCase)
 
-### Word Splitting (`splitLine` function in main.zig:49)
+### Word Splitting (`splitLine` function in main.zig:43)
 Splits input based on detected case format:
 - Snake/Const case: splits on underscores
 - Kebab case: splits on hyphens  
 - Title/Camel case: splits on uppercase letters
 
-### Case Cycling (`nextMode` function in main.zig:106)
+### Case Cycling (`nextMode` function in main.zig:148)
 Defines the transformation sequence: TitleCase → CamelCase → SnakeCase → KebabCase → ConstCase → TitleCase
 
 ## Testing
