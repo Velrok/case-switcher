@@ -48,6 +48,14 @@ pub fn main() !void {
     }
 }
 
+fn nextMode(mode: CaseMode) CaseMode {
+    return switch (mode) {
+        .TitleCase => .CamelCase,
+        .CamelCase => .SnakeCase,
+        .SnakeCase => .KebabCase,
+        .KebabCase => .ConstCase,
+        .ConstCase => .TitleCase,
+    };
 }
 
 fn identifyCase(word: []const u8) CaseMode {
