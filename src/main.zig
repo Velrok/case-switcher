@@ -1,46 +1,88 @@
-//! By convention, main.zig is where your main function lives in the case that
-//! you are building an executable. If you are making a library, the convention
-//! is to delete this file and start with root.zig instead.
+const CaseMode = enum {
+    TitleCase,
+    CamelCase,
+    SnakeCase,
+    KebabCase,
+    ConstCase,
+};
 
 pub fn main() !void {
-    // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
+    // read a word from std in
+    // have a list of case transformers:
+    // TitleCase
+    // camelCase
+    // snake_case
+    // kebab-case
+    // CONST_CASE
 
-    // stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
+    const stdin_reader = std.io.getStdIn().reader();
+    var buffer: [1024]u8 = undefined;
+    const line = try stdin_reader.readUntilDelimiter(&buffer, '\n');
 
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
-
-    try bw.flush(); // Don't forget to flush!
+    // step 1 read str from STD IN
+    // step 2 try parsers in order
+    print("> {s}", .{line});
 }
 
-test "simple test" {
-    var list = std.ArrayList(i32).init(std.testing.allocator);
-    defer list.deinit(); // Try commenting this out and see if zig detects the memory leak!
-    try list.append(42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
-}
-
-test "use other module" {
-    try std.testing.expectEqual(@as(i32, 150), lib.add(100, 50));
-}
-
-test "fuzz example" {
-    const Context = struct {
-        fn testOne(context: @This(), input: []const u8) anyerror!void {
-            _ = context;
-            // Try passing `--fuzz` to `zig build test` and see if it manages to fail this test case!
-            try std.testing.expect(!std.mem.eql(u8, "canyoufindme", input));
+fn identifyCase(word: []const u8) CaseMode {
+    const indexOfScalar = std.mem.indexOfScalar;
+    if (indexOfScalar(u8, word, '_') != null) {
+        if (std.ascii.isLower(word[0])) {
+            return .SnakeCase;
+        } else {
+            return .ConstCase;
         }
-    };
-    try std.testing.fuzz(Context{}, Context.testOne, .{});
+    } else if (indexOfScalar(u8, word, '-') != null) {
+        return .KebabCase;
+    } else {
+        // TitleCase
+        // camelCase
+        if (std.ascii.isLower(word[0])) {
+            return .CamelCase;
+        } else {
+            return .TitleCase;
+        }
+    }
+    std.debug.panic("reached end of identify case without result for {any}", .{word});
+}
+
+test "identifyCase recognises kebab-case" {
+    const result = identifyCase("kebab-case");
+    try testing.expectEqual(CaseMode.KebabCase, result);
+}
+
+test "identifyCase recognises snake_case" {
+    const result = identifyCase("snake_case");
+    try testing.expectEqual(CaseMode.SnakeCase, result);
+}
+
+test "identifyCase recognises CONST_CASE" {
+    const result = identifyCase("CONST_CASE");
+    try testing.expectEqual(CaseMode.ConstCase, result);
+}
+test "identifyCase recognises camelCase" {
+    const result = identifyCase("camelCase");
+    try testing.expectEqual(CaseMode.CamelCase, result);
+}
+
+test "identifyCase recognises TitleCase" {
+    const result = identifyCase("TitleCase");
+    try testing.expectEqual(CaseMode.TitleCase, result);
+}
+
+test "identifyCase recognises single lowercase word as camelCase" {
+    const result = identifyCase("word");
+    try testing.expectEqual(CaseMode.CamelCase, result);
+}
+
+test "identifyCase recognises single titlecase word as TitleCase" {
+    const result = identifyCase("Word");
+    try testing.expectEqual(CaseMode.TitleCase, result);
 }
 
 const std = @import("std");
+const print = std.debug.print;
+const testing = std.testing;
 
 /// This imports the separate module containing `root.zig`. Take a look in `build.zig` for details.
 const lib = @import("case_switcher_lib");
