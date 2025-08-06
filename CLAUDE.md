@@ -86,6 +86,32 @@ The project includes comprehensive unit tests for all core functions:
 
 Run tests with `zig build test` to execute both library and executable tests.
 
+## Release Process
+
+The project uses GitHub Actions for automated cross-platform builds and releases:
+
+### Creating a Release
+
+To create a new release:
+
+```bash
+# Tag the current commit with a version
+git tag v1.0.0
+
+# Push the tag to trigger the release workflow  
+git push origin v1.0.0
+```
+
+### Release Artifacts
+
+The release workflow automatically builds binaries for:
+- Linux x86_64 (`case-switcher-linux-x86_64.tar.gz`)
+- Windows x86_64 (`case-switcher-windows-x86_64.exe.zip`)
+- macOS x86_64 (`case-switcher-macos-x86_64.tar.gz`)
+- macOS ARM64 (`case-switcher-macos-aarch64.tar.gz`)
+
+All releases include auto-generated release notes and are published to the GitHub releases page.
+
 ## Development Notes
 
 - Uses arena allocator for memory management in main function
