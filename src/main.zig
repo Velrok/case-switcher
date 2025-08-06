@@ -9,19 +9,45 @@ const CaseMode = enum {
 pub fn main() !void {
     // read a word from std in
     // have a list of case transformers:
+
     // TitleCase
     // camelCase
     // snake_case
     // kebab-case
     // CONST_CASE
 
+    var arena = std.heap.ArenaAllocator.init(
+        std.heap.page_allocator,
+    );
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
     const stdin_reader = std.io.getStdIn().reader();
     var buffer: [1024]u8 = undefined;
     const line = try stdin_reader.readUntilDelimiter(&buffer, '\n');
 
-    // step 1 read str from STD IN
-    // step 2 try parsers in order
-    print("> {s}", .{line});
+    print("line: {s}\n", .{line});
+    const mode = identifyCase(line);
+    print("mode: {any}\n", .{mode});
+    var words = switch (mode) {
+        .SnakeCase, .ConstCase => std.mem.splitScalar(u8, line, '_'),
+        .KebabCase => std.mem.splitScalar(u8, line, '-'),
+
+        .TitleCase => std.debug.panic("not supported yet", .{}),
+        .CamelCase => std.debug.panic("not supported yet", .{}),
+    };
+
+    var lowercaseWords = std.ArrayList([]u8).init(allocator);
+
+    while (words.next()) |word| {
+        try lowercaseWords.append(try std.ascii.allocLowerString(allocator, word));
+    }
+
+    for (lowercaseWords.items) |lowercaseWord| {
+        print("lowercaseWord: {s}\n", .{lowercaseWord});
+    }
+}
+
 }
 
 fn identifyCase(word: []const u8) CaseMode {
