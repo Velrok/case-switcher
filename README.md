@@ -12,6 +12,16 @@ A fast command-line utility written in Zig that converts text between different 
 
 ## Installation
 
+### Homebrew (macOS)
+
+```bash
+# Add the tap
+brew tap Velrok/case-switcher https://github.com/Velrok/case-switcher
+
+# Install the tool
+brew install case-switcher
+```
+
 ### Download Pre-built Binaries
 
 Download the latest release for your platform from the [releases page](../../releases):
