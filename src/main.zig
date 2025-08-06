@@ -7,18 +7,7 @@ const CaseMode = enum {
 };
 
 pub fn main() !void {
-    // read a word from std in
-    // have a list of case transformers:
-
-    // TitleCase
-    // camelCase
-    // snake_case
-    // kebab-case
-    // CONST_CASE
-
-    var arena = std.heap.ArenaAllocator.init(
-        std.heap.page_allocator,
-    );
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
@@ -26,25 +15,29 @@ pub fn main() !void {
     var buffer: [1024]u8 = undefined;
     const line = try stdin_reader.readUntilDelimiter(&buffer, '\n');
 
-    print("line: {s}\n", .{line});
+    const result = try switcher(allocator, line);
+    print("{s}\n", .{result});
+}
+
+fn switcher(allocator: std.mem.Allocator, line: []const u8) ![]u8 {
     const mode = identifyCase(line);
-    print("mode: {any}\n", .{mode});
     var words = try splitLine(allocator, mode, line);
     defer words.deinit();
 
     var lowercaseWords = std.ArrayList([]u8).init(allocator);
-    defer lowercaseWords.deinit();
+    defer {
+        for (lowercaseWords.items) |word| {
+            allocator.free(word);
+        }
+        lowercaseWords.deinit();
+    }
 
     for (words.items) |word| {
         try lowercaseWords.append(try std.ascii.allocLowerString(allocator, word));
     }
 
-    for (lowercaseWords.items) |lowercaseWord| {
-        print("lowercaseWord: {s}\n", .{lowercaseWord});
-    }
-    // identify target CaseMode
-    // write function that takes a list of strings and encodes it in the target mode
-    // print the new word to STD OUT.
+    const targetMode = nextMode(mode);
+    return try convertToCase(allocator, lowercaseWords.items, targetMode);
 }
 
 fn splitLine(allocator: std.mem.Allocator, mode: CaseMode, line: []const u8) !std.ArrayList([]const u8) {
@@ -162,7 +155,67 @@ fn nextMode(mode: CaseMode) CaseMode {
     };
 }
 
+fn convertToCase(allocator: std.mem.Allocator, words: [][]u8, targetMode: CaseMode) ![]u8 {
+    if (words.len == 0) return try allocator.dupe(u8, "");
+
+    var result = std.ArrayList(u8).init(allocator);
+    defer result.deinit();
+
+    switch (targetMode) {
+        .TitleCase => {
+            for (words) |word| {
+                if (word.len > 0) {
+                    try result.append(std.ascii.toUpper(word[0]));
+                    if (word.len > 1) {
+                        try result.appendSlice(word[1..]);
+                    }
+                }
+            }
+        },
+        .CamelCase => {
+            for (words, 0..) |word, i| {
+                if (word.len > 0) {
+                    if (i == 0) {
+                        // First word stays lowercase
+                        try result.appendSlice(word);
+                    } else {
+                        // Subsequent words are title cased
+                        try result.append(std.ascii.toUpper(word[0]));
+                        if (word.len > 1) {
+                            try result.appendSlice(word[1..]);
+                        }
+                    }
+                }
+            }
+        },
+        .SnakeCase => {
+            for (words, 0..) |word, i| {
+                if (i > 0) try result.append('_');
+                try result.appendSlice(word);
+            }
+        },
+        .KebabCase => {
+            for (words, 0..) |word, i| {
+                if (i > 0) try result.append('-');
+                try result.appendSlice(word);
+            }
+        },
+        .ConstCase => {
+            for (words, 0..) |word, i| {
+                if (i > 0) try result.append('_');
+                for (word) |char| {
+                    try result.append(std.ascii.toUpper(char));
+                }
+            }
+        },
+    }
+
+    return try result.toOwnedSlice();
+}
+
 fn identifyCase(word: []const u8) CaseMode {
+    if (word.len == 0) return .CamelCase; // Default for empty strings
+
     const indexOfScalar = std.mem.indexOfScalar;
     if (indexOfScalar(u8, word, '_') != null) {
         if (std.ascii.isLower(word[0])) {
@@ -215,6 +268,59 @@ test "identifyCase recognises single lowercase word as camelCase" {
 test "identifyCase recognises single titlecase word as TitleCase" {
     const result = identifyCase("Word");
     try testing.expectEqual(CaseMode.TitleCase, result);
+}
+
+test "switcher function converts between case formats" {
+    const allocator = std.testing.allocator;
+
+    // TitleCase -> CamelCase
+    {
+        const result = try switcher(allocator, "HelloWorld");
+        defer allocator.free(result);
+        try std.testing.expectEqualStrings("helloWorld", result);
+    }
+
+    // CamelCase -> SnakeCase
+    {
+        const result = try switcher(allocator, "helloWorld");
+        defer allocator.free(result);
+        try std.testing.expectEqualStrings("hello_world", result);
+    }
+
+    // SnakeCase -> KebabCase
+    {
+        const result = try switcher(allocator, "hello_world");
+        defer allocator.free(result);
+        try std.testing.expectEqualStrings("hello-world", result);
+    }
+
+    // KebabCase -> ConstCase
+    {
+        const result = try switcher(allocator, "hello-world");
+        defer allocator.free(result);
+        try std.testing.expectEqualStrings("HELLO_WORLD", result);
+    }
+
+    // ConstCase -> TitleCase
+    {
+        const result = try switcher(allocator, "HELLO_WORLD");
+        defer allocator.free(result);
+        try std.testing.expectEqualStrings("HelloWorld", result);
+    }
+
+    // Single words
+    {
+        const result = try switcher(allocator, "hello");
+        defer allocator.free(result);
+        try std.testing.expectEqualStrings("hello", result); // camelCase -> snake_case, but single word
+    }
+
+    // Empty string
+    {
+        const result = try switcher(allocator, "");
+        defer allocator.free(result);
+        try std.testing.expectEqualStrings("", result);
+    }
 }
 
 const std = @import("std");
