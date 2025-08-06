@@ -29,23 +29,127 @@ pub fn main() !void {
     print("line: {s}\n", .{line});
     const mode = identifyCase(line);
     print("mode: {any}\n", .{mode});
-    var words = switch (mode) {
-        .SnakeCase, .ConstCase => std.mem.splitScalar(u8, line, '_'),
-        .KebabCase => std.mem.splitScalar(u8, line, '-'),
-
-        .TitleCase => std.debug.panic("not supported yet", .{}),
-        .CamelCase => std.debug.panic("not supported yet", .{}),
-    };
+    var words = try splitLine(allocator, mode, line);
+    defer words.deinit();
 
     var lowercaseWords = std.ArrayList([]u8).init(allocator);
+    defer lowercaseWords.deinit();
 
-    while (words.next()) |word| {
+    for (words.items) |word| {
         try lowercaseWords.append(try std.ascii.allocLowerString(allocator, word));
     }
 
     for (lowercaseWords.items) |lowercaseWord| {
         print("lowercaseWord: {s}\n", .{lowercaseWord});
     }
+    // identify target CaseMode
+    // write function that takes a list of strings and encodes it in the target mode
+    // print the new word to STD OUT.
+}
+
+fn splitLine(allocator: std.mem.Allocator, mode: CaseMode, line: []const u8) !std.ArrayList([]const u8) {
+    var result = std.ArrayList([]const u8).init(allocator);
+
+    switch (mode) {
+        .SnakeCase, .ConstCase => {
+            var words = std.mem.splitAny(u8, line, "_");
+            while (words.next()) |word| {
+                try result.append(word);
+            }
+        },
+        .KebabCase => {
+            var words = std.mem.splitAny(u8, line, "-");
+            while (words.next()) |word| {
+                try result.append(word);
+            }
+        },
+        .TitleCase, .CamelCase => {
+            if (line.len == 0) {
+                try result.append("");
+                return result;
+            }
+
+            var start: usize = 0;
+            for (line, 0..) |char, i| {
+                if (i > 0 and std.ascii.isUpper(char)) {
+                    try result.append(line[start..i]);
+                    start = i;
+                }
+            }
+            // Add the last word
+            if (start < line.len) {
+                try result.append(line[start..]);
+            }
+        },
+    }
+    return result;
+}
+test "splitLine function" {
+    const allocator = std.testing.allocator;
+
+    // Test SnakeCase
+    var snake_words = try splitLine(allocator, .SnakeCase, "hello_world_zig");
+    defer snake_words.deinit();
+    try std.testing.expect(snake_words.items.len == 3);
+    try std.testing.expectEqualStrings("hello", snake_words.items[0]);
+    try std.testing.expectEqualStrings("world", snake_words.items[1]);
+    try std.testing.expectEqualStrings("zig", snake_words.items[2]);
+
+    // Test ConstCase
+    var const_words = try splitLine(allocator, .ConstCase, "HELLO_WORLD_ZIG");
+    defer const_words.deinit();
+    try std.testing.expect(const_words.items.len == 3);
+    try std.testing.expectEqualStrings("HELLO", const_words.items[0]);
+    try std.testing.expectEqualStrings("WORLD", const_words.items[1]);
+    try std.testing.expectEqualStrings("ZIG", const_words.items[2]);
+
+    // Test KebabCase
+    var kebab_words = try splitLine(allocator, .KebabCase, "hello-world-zig");
+    defer kebab_words.deinit();
+    try std.testing.expect(kebab_words.items.len == 3);
+    try std.testing.expectEqualStrings("hello", kebab_words.items[0]);
+    try std.testing.expectEqualStrings("world", kebab_words.items[1]);
+    try std.testing.expectEqualStrings("zig", kebab_words.items[2]);
+
+    // Test TitleCase
+    var title_words = try splitLine(allocator, .TitleCase, "HelloWorldAgain");
+    defer title_words.deinit();
+    try std.testing.expect(title_words.items.len == 3);
+    try std.testing.expectEqualStrings("Hello", title_words.items[0]);
+    try std.testing.expectEqualStrings("World", title_words.items[1]);
+    try std.testing.expectEqualStrings("Again", title_words.items[2]);
+
+    // Test CamelCase
+    var camel_words = try splitLine(allocator, .CamelCase, "helloWorldAgain");
+    defer camel_words.deinit();
+    try std.testing.expect(camel_words.items.len == 3);
+    try std.testing.expectEqualStrings("hello", camel_words.items[0]);
+    try std.testing.expectEqualStrings("World", camel_words.items[1]);
+    try std.testing.expectEqualStrings("Again", camel_words.items[2]);
+
+    // Test empty input
+    var empty_words = try splitLine(allocator, .SnakeCase, "");
+    defer empty_words.deinit();
+    try std.testing.expect(empty_words.items.len == 1);
+    try std.testing.expectEqualStrings("", empty_words.items[0]);
+
+    // Test input with no delimiters
+    var no_delim_words = try splitLine(allocator, .SnakeCase, "helloworld");
+    defer no_delim_words.deinit();
+    try std.testing.expect(no_delim_words.items.len == 1);
+    try std.testing.expectEqualStrings("helloworld", no_delim_words.items[0]);
+
+    // Test single word TitleCase
+    var single_title = try splitLine(allocator, .TitleCase, "Hello");
+    defer single_title.deinit();
+    try std.testing.expect(single_title.items.len == 1);
+    try std.testing.expectEqualStrings("Hello", single_title.items[0]);
+
+    // Test single word camelCase
+    var single_camel = try splitLine(allocator, .CamelCase, "hello");
+    defer single_camel.deinit();
+    try std.testing.expect(single_camel.items.len == 1);
+    try std.testing.expectEqualStrings("hello", single_camel.items[0]);
 }
 
 fn nextMode(mode: CaseMode) CaseMode {
@@ -77,7 +181,6 @@ fn identifyCase(word: []const u8) CaseMode {
             return .TitleCase;
         }
     }
-    std.debug.panic("reached end of identify case without result for {any}", .{word});
 }
 
 test "identifyCase recognises kebab-case" {
