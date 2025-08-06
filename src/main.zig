@@ -192,7 +192,7 @@ test "splitLine function" {
 
 fn nextMode(mode: CaseMode, excluded: ExcludedCases) CaseMode {
     const sequence = [_]CaseMode{ .TitleCase, .CamelCase, .SnakeCase, .KebabCase, .ConstCase };
-    
+
     // Find current mode index
     var current_index: usize = 0;
     for (sequence, 0..) |seq_mode, i| {
@@ -201,18 +201,18 @@ fn nextMode(mode: CaseMode, excluded: ExcludedCases) CaseMode {
             break;
         }
     }
-    
+
     // Find next non-excluded mode
     var next_index = (current_index + 1) % sequence.len;
     while (excluded.isExcluded(sequence[next_index]) and next_index != current_index) {
         next_index = (next_index + 1) % sequence.len;
     }
-    
+
     // If all modes are excluded except current, return current
     if (next_index == current_index and excluded.isExcluded(sequence[next_index])) {
         return mode;
     }
-    
+
     return sequence[next_index];
 }
 
@@ -387,24 +387,24 @@ test "switcher function converts between case formats" {
 
 test "nextMode with exclusions" {
     const no_exclusions = ExcludedCases{};
-    
+
     // Test normal sequence without exclusions
     try testing.expectEqual(CaseMode.CamelCase, nextMode(.TitleCase, no_exclusions));
     try testing.expectEqual(CaseMode.SnakeCase, nextMode(.CamelCase, no_exclusions));
     try testing.expectEqual(CaseMode.KebabCase, nextMode(.SnakeCase, no_exclusions));
     try testing.expectEqual(CaseMode.ConstCase, nextMode(.KebabCase, no_exclusions));
     try testing.expectEqual(CaseMode.TitleCase, nextMode(.ConstCase, no_exclusions));
-    
+
     // Test with camel case excluded - should skip camelCase
     const no_camel = ExcludedCases{ .camel_case = true };
     try testing.expectEqual(CaseMode.SnakeCase, nextMode(.TitleCase, no_camel));
     try testing.expectEqual(CaseMode.KebabCase, nextMode(.SnakeCase, no_camel));
-    
+
     // Test with multiple exclusions
     const no_camel_kebab = ExcludedCases{ .camel_case = true, .kebab_case = true };
     try testing.expectEqual(CaseMode.SnakeCase, nextMode(.TitleCase, no_camel_kebab));
     try testing.expectEqual(CaseMode.ConstCase, nextMode(.SnakeCase, no_camel_kebab));
-    
+
     // Test when current mode is excluded - should stay same
     const all_excluded = ExcludedCases{ .title_case = true, .camel_case = true, .snake_case = true, .kebab_case = true, .const_case = true };
     try testing.expectEqual(CaseMode.TitleCase, nextMode(.TitleCase, all_excluded));
@@ -412,7 +412,7 @@ test "nextMode with exclusions" {
 
 test "switcher with exclusions" {
     const allocator = std.testing.allocator;
-    
+
     // Test excluding camelCase: TitleCase -> SnakeCase instead of CamelCase
     {
         const no_camel = ExcludedCases{ .camel_case = true };
@@ -420,7 +420,7 @@ test "switcher with exclusions" {
         defer allocator.free(result);
         try std.testing.expectEqualStrings("hello_world", result);
     }
-    
+
     // Test excluding snake and kebab: CamelCase -> ConstCase (skips snake and kebab)
     {
         const no_snake_kebab = ExcludedCases{ .snake_case = true, .kebab_case = true };
@@ -428,16 +428,16 @@ test "switcher with exclusions" {
         defer allocator.free(result);
         try std.testing.expectEqualStrings("HELLO_WORLD", result);
     }
-    
+
     // Test excluding everything but title and camel: should alternate between them
     {
         const only_title_camel = ExcludedCases{ .snake_case = true, .kebab_case = true, .const_case = true };
-        
+
         // TitleCase -> CamelCase
         const result1 = try switcher(allocator, "HelloWorld", only_title_camel);
         defer allocator.free(result1);
         try std.testing.expectEqualStrings("helloWorld", result1);
-        
+
         // CamelCase -> TitleCase (wraps around, skipping excluded ones)
         const result2 = try switcher(allocator, "helloWorld", only_title_camel);
         defer allocator.free(result2);
@@ -453,7 +453,7 @@ test "ExcludedCases isExcluded function" {
         .kebab_case = false,
         .const_case = true,
     };
-    
+
     try testing.expect(excluded.isExcluded(.TitleCase));
     try testing.expect(!excluded.isExcluded(.CamelCase));
     try testing.expect(excluded.isExcluded(.SnakeCase));
